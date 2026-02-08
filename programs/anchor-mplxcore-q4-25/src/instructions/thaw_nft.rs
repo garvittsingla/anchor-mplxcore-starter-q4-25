@@ -7,15 +7,55 @@ use mpl_core::{
 
 use crate::{error::MPLXCoreError, state::CollectionAuthority};
 
-// #[derive(Accounts)]
-// pub struct ThawNft<'info> {
-//    // TODO
-// }
+#[derive(Accounts)]
+pub struct ThawNft<'info> {
+   // TODO
+   #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(mut)]
+    /// CHECK: Verified by Metaplex Core CPI
+    pub asset: UncheckedAccount<'info>,
 
-// impl<'info> ThawNft<'info> {
-//     pub fn thaw_nft(&mut self) -> Result<()> {
-//         // TODO
+    #[account(
+        mut,
+        constraint = collection.owner == &CORE_PROGRAM_ID @ MPLXCoreError::InvalidCollection,
+    )]
+    /// CHECK: Verified by Metaplex Core CPI
+    pub collection: UncheckedAccount<'info>,
 
-//         Ok(())
-//     }
-// }
+    #[account(
+        seeds = [b"collection_authority", collection.key().as_ref()],
+        bump = collection_authority.bump,
+        constraint = collection_authority.creator == authority.key() @ MPLXCoreError::NotAuthorized,
+    )]
+    pub collection_authority: Account<'info, CollectionAuthority>,
+     #[account(address = CORE_PROGRAM_ID)]
+    /// CHECK: Metaplex Core program
+    pub core_program: UncheckedAccount<'info>,
+
+    pub system_program: Program<'info, System>,
+
+}
+
+impl<'info> ThawNft<'info> {
+    pub fn thaw_nft(&mut self) -> Result<()> {
+        // TODO
+        let signer_seeds: &[&[&[u8]]] = &[&[
+            b"collection_authority",
+            &self.collection.key().to_bytes(),
+            &[self.collection_authority.bump],
+        ]];
+
+        // Update the FreezeDelegate plugin to set frozen = false (THAW!)
+        UpdatePluginV1CpiBuilder::new(&self.core_program.to_account_info())
+            .asset(&self.asset.to_account_info())
+            .collection(Some(&self.collection.to_account_info()))
+            .authority(Some(&self.collection_authority.to_account_info()))
+            .payer(&self.authority.to_account_info())
+            .plugin(Plugin::FreezeDelegate(FreezeDelegate { frozen: false })) // <-- KEY DIFFERENCE!
+            .system_program(&self.system_program.to_account_info())
+            .invoke_signed(signer_seeds)?;
+
+        Ok(())
+    }
+}
